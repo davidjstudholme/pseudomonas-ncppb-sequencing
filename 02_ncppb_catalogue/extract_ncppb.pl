@@ -3,16 +3,21 @@
 use strict;
 use warnings;
 use utf8;
+use open qw(:std :encoding(UTF-8));
 use JSON::PP;
 
-### Input and output files
+# ------------------------------------------------------------
+# Input / output
+# ------------------------------------------------------------
 
-my $input         = 'pseudomonas-results.html';
-my $output        = 'ncppb-pseudomonas.tsv';
-my $sorted_output = 'ncppb-pseudomonas-alphabetical.tsv';
+my $input_file = 'pseudomonas-results.html';
 
+my $output_file = 'ncppb-pseudomonas.tsv';
+my $sorted_file = 'ncppb-pseudomonas-alphabetical.tsv';
 
-### Columns to extract
+# ------------------------------------------------------------
+# TSV columns
+# ------------------------------------------------------------
 
 my @columns = (
     'NCPPB_number',
@@ -53,333 +58,287 @@ my @columns = (
     'detail_url',
 );
 
+my $expected_columns = scalar @columns;
 
-### Clean values for TSV output
+# ------------------------------------------------------------
+# Read HTML
+# ------------------------------------------------------------
+
+print "Reading $input_file ...\n";
+
+open my $fh, '<', $input_file
+    or die "Cannot open $input_file: $!\n";
+
+local $/;
+my $html = <$fh>;
+
+close $fh;
+
+# ------------------------------------------------------------
+# Extract completeDataset JSON
+# ------------------------------------------------------------
+
+my $marker = 'completeDataset = [';
+
+my $marker_pos = index($html, $marker);
+
+die "Could not find '$marker' in $input_file\n"
+    if $marker_pos == -1;
+
+my $json_start = $marker_pos + length($marker) - 1;
+
+my $json_text = substr($html, $json_start);
+
+# ------------------------------------------------------------
+# Decode JSON
+# ------------------------------------------------------------
+
+my $json = JSON::PP->new;
+
+my ($dataset, $length_used);
+
+eval {
+    ($dataset, $length_used) = $json->decode_prefix($json_text);
+};
+
+if ($@) {
+    die "Could not decode completeDataset JSON:\n$@\n";
+}
+
+die "Decoded JSON is not an array\n"
+    unless ref($dataset) eq 'ARRAY';
+
+print "Number of records: ", scalar(@$dataset), "\n\n";
+
+# ------------------------------------------------------------
+# Clean a value for true TSV
 #
-# TSV fields must not contain literal tabs or line breaks.
+# TSV has no quoting mechanism, so tabs and newlines cannot
+# occur inside fields.
 #
-# We also remove Unicode line/paragraph separators because these can
-# sometimes occur in scraped web data and may be interpreted as line
-# breaks by downstream software.
-#
-# ASCII double quotes are converted to Unicode left/right quotation
-# marks for GitHub compatibility. GitHub's TSV renderer can otherwise
-# interpret embedded ASCII quotes as CSV-style quoting.
+# We also replace literal double quotes with single quotes.
+# This is NOT required by TSV, but works around GitHub's
+# incorrect TSV renderer, which treats double quotes as CSV
+# quoting characters.
+# ------------------------------------------------------------
 
 sub clean_value {
-
     my ($value) = @_;
 
     return '' unless defined $value;
 
-
-    ### Arrays
-
     if (ref($value) eq 'ARRAY') {
-
-        return join(
-            ', ',
-            map { clean_value($_) } @$value
-        );
+        $value = join(', ', map { clean_value($_) } @$value);
     }
-
-
-    ### Hashes
-
-    if (ref($value) eq 'HASH') {
-
-        return join(
+    elsif (ref($value) eq 'HASH') {
+        $value = join(
             '; ',
             map {
-                $_ . '=' . clean_value($value->{$_})
+                $_ . ': ' . clean_value($value->{$_})
             } sort keys %$value
         );
     }
+    elsif (ref($value)) {
+        $value = "$value";
+    }
 
-
-    ### Convert to a string
-
-    $value = "$value";
-
-
-    ### Remove ordinary line breaks
-
+    # Remove line breaks / Unicode line separators.
     $value =~ s/\r\n/ /g;
     $value =~ s/\r/ /g;
     $value =~ s/\n/ /g;
+    $value =~ s/\x{2028}/ /g;
+    $value =~ s/\x{2029}/ /g;
 
-
-    ### Remove Unicode line and paragraph separators
-
-    $value =~ s/\x{2028}/ /g;    # LINE SEPARATOR
-    $value =~ s/\x{2029}/ /g;    # PARAGRAPH SEPARATOR
-
-
-    ### Tabs would create additional TSV fields
-
+    # A literal TAB would create an additional TSV field.
     $value =~ s/\t/ /g;
 
-
-    ### Replace ASCII double quotes
-    #
-    # GitHub's TSV renderer appears to use CSV-style quoting rules.
-    # Converting ordinary ASCII quotes prevents strings such as:
-    #
-    # "Bacterium betle"
-    #
-    # from being interpreted as malformed CSV quoting.
-    #
-    # The underlying wording is retained, but with typographic quotes.
-
-    $value =~ s/"/\x{201C}/g;
-
+    # GitHub's TSV renderer incorrectly treats " as CSV quoting.
+    $value =~ s/"/'/g;
 
     return $value;
 }
 
-
-### Clean URLs
-#
-# Convert Markdown links such as:
-#
-# [https://example.org](https://example.org)
-#
-# to:
-#
-# https://example.org
+# ------------------------------------------------------------
+# Clean URLs
+# ------------------------------------------------------------
 
 sub clean_url {
-
     my ($value) = @_;
 
     $value = clean_value($value);
 
-    if ($value =~ /^\[(.*?)\]\((.*?)\)$/) {
-        return $2;
-    }
+    # Convert Markdown-style:
+    # [https://example.com](https://example.com)
+    # to:
+    # https://example.com
+    $value =~ s/^\[([^\]]+)\]\(([^)]+)\)$/$2/;
 
     return $value;
 }
 
-
-### Read the HTML as UTF-8
-
-open my $in, '<:encoding(UTF-8)', $input
-    or die "Cannot read $input: $!\n";
-
-local $/;
-
-my $html = <$in>;
-
-close $in;
-
-
-### Locate the embedded completeDataset JSON
-
-my $marker = 'completeDataset = [';
-
-my $pos = index($html, $marker);
-
-die "Could not find '$marker' in $input\n"
-    if $pos == -1;
-
-$pos += length('completeDataset = ');
-
-my $json_text = substr($html, $pos);
-
-
-### Decode the JSON array
-#
-# The HTML has already been decoded from UTF-8.
-# Therefore JSON::PP must receive a Perl Unicode string.
-#
-# Do NOT use ->utf8(1) here.
-
-my $json = JSON::PP->new;
-
-my ($data, $characters_read) =
-    $json->decode_prefix($json_text);
-
-die "Could not decode completeDataset JSON\n"
-    unless ref($data) eq 'ARRAY';
-
-
-print "Number of records: ", scalar(@$data), "\n";
-
-
-### Convert one NCPPB record into a TSV row
+# ------------------------------------------------------------
+# Convert one record to a TSV row
+# ------------------------------------------------------------
 
 sub record_to_tsv {
-
     my ($record) = @_;
 
     my @values;
 
-    for my $column (@columns) {
+    foreach my $column (@columns) {
 
         my $value;
 
-
-        ### NCPPB number
-
         if ($column eq 'NCPPB_number') {
-
             $value = $record->{name};
+
         }
-
-
-        ### Catalogue name
-
         elsif ($column eq 'catalogue_name') {
-
             $value = $record->{name_2};
         }
-
-
-        ### NCBI URL
-
-        elsif ($column eq 'url_link_ncbi') {
-
-            $value = clean_url($record->{$column});
-        }
-
-
-        ### Q-bank URL
-
-        elsif ($column eq 'url_link_q_bank') {
-
-            $value = clean_url($record->{$column});
-        }
-
-
-        ### Construct NCPPB detail URL
-
         elsif ($column eq 'detail_url') {
-
-            my $ncppb = clean_value($record->{name});
-
-            $value =
-                "https://ncppb.fera.co.uk/furtherinfo/$ncppb";
+            my $ncppb = $record->{name};
+            $value = defined($ncppb)
+                ? "https://ncppb.fera.co.uk/furtherinfo/$ncppb"
+                : '';
         }
-
-
-        ### All other fields
-
         else {
-
-            $value = clean_value($record->{$column});
+            $value = $record->{$column};
         }
 
+        if ($column eq 'url_link_ncbi' ||
+            $column eq 'url_link_q_bank' ||
+            $column eq 'detail_url') {
 
-        $value = '' unless defined $value;
+            $value = clean_url($value);
+        }
+        else {
+            $value = clean_value($value);
+        }
 
         push @values, $value;
     }
 
+    # Validate BEFORE joining/writing.
+    die "Internal error: record produced "
+        . scalar(@values)
+        . " fields; expected $expected_columns\n"
+        unless scalar(@values) == $expected_columns;
+
+    # Make absolutely sure no field still contains a tab/newline.
+    foreach my $value (@values) {
+        die "Internal error: field contains TAB\n"
+            if $value =~ /\t/;
+
+        die "Internal error: field contains newline\n"
+            if $value =~ /[\r\n]/;
+    }
 
     return join("\t", @values);
 }
 
+# ------------------------------------------------------------
+# Create TSV rows
+# ------------------------------------------------------------
 
-### Write the complete TSV
+my @rows;
 
-open my $out, '>:encoding(UTF-8)', $output
-    or die "Cannot write $output: $!\n";
+foreach my $record (@$dataset) {
+
+    die "Unexpected record type\n"
+        unless ref($record) eq 'HASH';
+
+    my $row = record_to_tsv($record);
+
+    push @rows, {
+        row    => $row,
+        record => $record,
+    };
+}
+
+# ------------------------------------------------------------
+# Write TSV
+# ------------------------------------------------------------
+
+open my $out, '>:encoding(UTF-8)', $output_file
+    or die "Cannot write $output_file: $!\n";
 
 print $out join("\t", @columns), "\n";
 
-for my $record (@$data) {
-
-    print $out record_to_tsv($record), "\n";
+foreach my $item (@rows) {
+    print $out $item->{row}, "\n";
 }
 
 close $out;
 
-print "Wrote $output\n";
+print "Wrote $output_file\n\n";
 
+# ------------------------------------------------------------
+# Sort alphabetically by catalogue_name
+# ------------------------------------------------------------
 
-### Sort records alphabetically by catalogue name
-#
-# Case-insensitive alphabetical ordering.
-# NCPPB number is the secondary sort key.
+my $catalogue_index;
 
-my @sorted_data = sort {
+for my $i (0 .. $#columns) {
+    if ($columns[$i] eq 'catalogue_name') {
+        $catalogue_index = $i;
+        last;
+    }
+}
 
-    my $name_a = clean_value($a->{name_2});
-    my $name_b = clean_value($b->{name_2});
+die "Could not find catalogue_name column\n"
+    unless defined $catalogue_index;
 
-    lc($name_a) cmp lc($name_b)
+my @sorted_rows = sort {
+    my @a = split(/\t/, $a->{row}, -1);
+    my @b = split(/\t/, $b->{row}, -1);
+
+    lc($a[$catalogue_index]) cmp lc($b[$catalogue_index])
         ||
-    ($a->{name} // 0) <=> ($b->{name} // 0)
+    $a[$catalogue_index] cmp $b[$catalogue_index]
+} @rows;
 
-} @$data;
-
-
-### Write the alphabetically sorted TSV
-
-open my $sorted, '>:encoding(UTF-8)', $sorted_output
-    or die "Cannot write $sorted_output: $!\n";
+open my $sorted, '>:encoding(UTF-8)', $sorted_file
+    or die "Cannot write $sorted_file: $!\n";
 
 print $sorted join("\t", @columns), "\n";
 
-for my $record (@sorted_data) {
-
-    print $sorted record_to_tsv($record), "\n";
+foreach my $item (@sorted_rows) {
+    print $sorted $item->{row}, "\n";
 }
 
 close $sorted;
 
-print "Wrote $sorted_output\n";
-print "Sorted ",
-      scalar(@sorted_data),
-      " records by catalogue name\n";
+print "Wrote $sorted_file\n\n";
+print "Sorted ", scalar(@sorted_rows),
+      " records by catalogue name\n\n";
 
+# ------------------------------------------------------------
+# Summary validation
+# ------------------------------------------------------------
 
-### Final validation
+print "Checking TSV structure...\n";
 
-print "\nChecking TSV structure...\n";
+my $expected_lines = scalar(@rows) + 1;
 
-open my $check, '<:encoding(UTF-8)', $output
-    or die "Cannot check $output: $!\n";
+my $actual_lines = 0;
 
-my $line_number = 0;
-my $bad_lines   = 0;
+open my $check, '<:encoding(UTF-8)', $output_file
+    or die "Cannot reopen $output_file: $!\n";
 
-while (my $line = <$check>) {
-
-    $line_number++;
-
-    chomp $line;
-
-    my @fields = split(/\t/, $line, -1);
-
-    if (scalar(@fields) != scalar(@columns)) {
-
-        print "WARNING: line $line_number contains ",
-              scalar(@fields),
-              " fields; expected ",
-              scalar(@columns),
-              "\n";
-
-        $bad_lines++;
-    }
+while (<$check>) {
+    $actual_lines++;
 }
 
 close $check;
 
-
-if ($bad_lines == 0) {
-
-    print "TSV validation passed: ";
-    print $line_number;
-    print " lines, ";
-    print scalar(@columns);
-    print " fields per line.\n";
+if ($actual_lines != $expected_lines) {
+    die "TSV validation FAILED: expected $expected_lines lines, "
+      . "found $actual_lines\n";
 }
-else {
 
-    print "TSV validation FAILED: ";
-    print $bad_lines;
-    print " problematic lines.\n";
-}
+print "TSV validation OK: $actual_lines lines, "
+    . "$expected_columns columns per row\n";
+
+print "\nDone.\n";
 
