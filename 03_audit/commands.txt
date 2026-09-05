@@ -1,0 +1,7 @@
+### Set up NCBI edirect tools
+conda create -n ncbi-edirect -c conda-forge -c bioconda entrez-direct
+conda activate ncbi-edirect
+export EMAIL="your.email@your-institution.ac.uk"
+
+### Which NCPPB strains have not yet been sequenced?
+perl identify_ncppb_strains_not_sequenced.pl > mapping-ncppb-to-biosamples.tsv
