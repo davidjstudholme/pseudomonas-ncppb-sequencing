@@ -5,6 +5,8 @@ export EMAIL="your.email@your-institution.ac.uk"
 
 ### Choose taxa
 export taxids="txid2487519[Organism:exp] \ # Phytopseudomonas daroniae
+       OR txid47877[Organism:exp] \      # Pseudomonas amygdali
+       OR txid136849[Organism:exp] \      # Pseudomonas syringae group	      
        OR txid46677[Organism:exp] \      # Pseudomonas agarici
        OR txid3064349[Organism:exp] \      # Pseudomonas alabamensis
        OR txid2810613[Organism:exp] \      # Pseudomonas alliivorans
@@ -63,9 +65,3 @@ perl parse_biosamples.pl
 
 ### Get NCBI assemblies for each BioSample => biosample_assemblies.tsv
 perl get_biosample_links.pl
-
-### Generate table of assemblies in PhytoBacExplorer and/or NCBI
-perl generate_census_of_assemblies.pl  > RSSC-assemblies-13-august-2026.tsv
-
-### Which NCPPB strains have not yet been sequenced?
-perl identify_ncppb_strains_not_sequenced.pl > mapping-ncppb-to-biosamples.tsv
