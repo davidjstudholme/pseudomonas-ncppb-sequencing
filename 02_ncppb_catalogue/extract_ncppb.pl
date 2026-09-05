@@ -77,8 +77,8 @@ sub clean_value {
         );
     }
 
-    # Remove line breaks and tabs so every record occupies
-    # exactly one line of the TSV file.
+    # A TSV field must not contain literal tabs or newlines.
+    # Replace them with spaces.
 
     $value =~ s/\r\n/ /g;
     $value =~ s/\r/ /g;
@@ -113,7 +113,7 @@ sub clean_url {
 }
 
 
-### Read the HTML as UTF-8 text
+### Read the HTML as UTF-8
 
 open my $in, '<:encoding(UTF-8)', $input
     or die "Cannot read $input: $!\n";
@@ -141,11 +141,8 @@ my $json_text = substr($html, $pos);
 
 ### Decode the JSON array
 #
-# IMPORTANT:
-#
-# $html was already decoded from UTF-8 above, so JSON::PP
-# must receive a Perl Unicode string. Do NOT use ->utf8(1)
-# here.
+# The HTML has already been decoded from UTF-8, so do not
+# use ->utf8(1) here.
 
 my $json = JSON::PP->new;
 
@@ -231,9 +228,7 @@ print "Wrote $output\n";
 ### Sort records alphabetically by catalogue name
 #
 # Case-insensitive alphabetical ordering.
-#
-# NCPPB number is used as a secondary sort key if two
-# records have the same catalogue name.
+# NCPPB number is the secondary sort key.
 
 my @sorted_data = sort {
 
