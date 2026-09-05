@@ -5,7 +5,6 @@ export EMAIL="your.email@your-institution.ac.uk"
 
 ### Choose taxa
 export taxids="txid2487519[Organism:exp] \ # Phytopseudomonas daroniae
-       OR txid47877[Organism:exp] \      # Pseudomonas amygdali
        OR txid136849[Organism:exp] \      # Pseudomonas syringae group	      
        OR txid46677[Organism:exp] \      # Pseudomonas agarici
        OR txid3064349[Organism:exp] \      # Pseudomonas alabamensis
@@ -40,6 +39,43 @@ export taxids="txid2487519[Organism:exp] \ # Phytopseudomonas daroniae
        OR txid33069[Organism:exp] \      # Pseudomonas viridiflava
        OR txid1451454[Organism:exp]"       # Pseudomonas caspiana
 
+### Choose taxa
+
+export taxids='
+txid2487519[Organism:exp] OR txid136849[Organism:exp] OR
+txid46677[Organism:exp] OR txid3064349[Organism:exp] OR
+txid2810613[Organism:exp] OR txid53407[Organism:exp] OR
+txid1190415[Organism:exp] OR txid46257[Organism:exp] OR
+txid254015[Organism:exp] OR txid3064348[Organism:exp] OR
+txid930166[Organism:exp] OR
+txid86840[Organism:exp] OR
+txid46678[Organism:exp] OR
+txid1583341[Organism:exp] OR
+txid36746[Organism:exp] OR
+txid3064347[Organism:exp] OR
+txid1456814[Organism:exp] OR
+txid47879[Organism:exp] OR
+txid2487520[Organism:exp] OR
+txid2006980[Organism:exp] OR
+txid53410[Organism:exp] OR
+txid29435[Organism:exp] OR
+txid129847[Organism:exp] OR
+txid298[Organism:exp] OR
+txid301[Organism:exp] OR
+txid2899822[Organism:exp] OR
+txid380021[Organism:exp] OR
+txid191391[Organism:exp] OR
+txid3064350[Organism:exp] OR
+txid86265[Organism:exp] OR
+txid29442[Organism:exp] OR
+txid200454[Organism:exp] OR
+txid33069[Organism:exp] OR
+txid1451454[Organism:exp]
+'
+
+
+
+
 ### Get all BioSamples as UIDs
 esearch -db biosample -query "$taxids" |
     efetch -format uid > biosample_uids.txt
@@ -50,9 +86,7 @@ esearch -db biosample \
 grep '<Count>'
 
 ### Retrieve the BioSamples
-esearch -db biosample \
-  -query "$taxids" |
-efetch -db biosample -format xml > biosamples.xml
+esearch -db biosample -query "$taxids" | efetch -db biosample -format xml > biosamples.xml
 
 ### Count the retrieved BioSamples
 grep -o 'accession="SAM[A-Z]*[0-9]*"' biosamples.xml | wc -l
