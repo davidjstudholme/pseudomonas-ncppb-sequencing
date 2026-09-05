@@ -55,6 +55,16 @@ my @columns = (
 
 
 ### Clean values for TSV output
+#
+# TSV fields must not contain literal tabs or line breaks.
+#
+# We also remove Unicode line/paragraph separators because these can
+# sometimes occur in scraped web data and may be interpreted as line
+# breaks by downstream software.
+#
+# ASCII double quotes are converted to Unicode left/right quotation
+# marks for GitHub compatibility. GitHub's TSV renderer can otherwise
+# interpret embedded ASCII quotes as CSV-style quoting.
 
 sub clean_value {
 
@@ -62,13 +72,22 @@ sub clean_value {
 
     return '' unless defined $value;
 
-    # Arrays
+
+    ### Arrays
+
     if (ref($value) eq 'ARRAY') {
-        return join(', ', map { clean_value($_) } @$value);
+
+        return join(
+            ', ',
+            map { clean_value($_) } @$value
+        );
     }
 
-    # Hashes
+
+    ### Hashes
+
     if (ref($value) eq 'HASH') {
+
         return join(
             '; ',
             map {
@@ -77,13 +96,43 @@ sub clean_value {
         );
     }
 
-    # A TSV field must not contain literal tabs or newlines.
-    # Replace them with spaces.
+
+    ### Convert to a string
+
+    $value = "$value";
+
+
+    ### Remove ordinary line breaks
 
     $value =~ s/\r\n/ /g;
     $value =~ s/\r/ /g;
     $value =~ s/\n/ /g;
+
+
+    ### Remove Unicode line and paragraph separators
+
+    $value =~ s/\x{2028}/ /g;    # LINE SEPARATOR
+    $value =~ s/\x{2029}/ /g;    # PARAGRAPH SEPARATOR
+
+
+    ### Tabs would create additional TSV fields
+
     $value =~ s/\t/ /g;
+
+
+    ### Replace ASCII double quotes
+    #
+    # GitHub's TSV renderer appears to use CSV-style quoting rules.
+    # Converting ordinary ASCII quotes prevents strings such as:
+    #
+    # "Bacterium betle"
+    #
+    # from being interpreted as malformed CSV quoting.
+    #
+    # The underlying wording is retained, but with typographic quotes.
+
+    $value =~ s/"/\x{201C}/g;
+
 
     return $value;
 }
@@ -141,12 +190,15 @@ my $json_text = substr($html, $pos);
 
 ### Decode the JSON array
 #
-# The HTML has already been decoded from UTF-8, so do not
-# use ->utf8(1) here.
+# The HTML has already been decoded from UTF-8.
+# Therefore JSON::PP must receive a Perl Unicode string.
+#
+# Do NOT use ->utf8(1) here.
 
 my $json = JSON::PP->new;
 
-my ($data, $characters_read) = $json->decode_prefix($json_text);
+my ($data, $characters_read) =
+    $json->decode_prefix($json_text);
 
 die "Could not decode completeDataset JSON\n"
     unless ref($data) eq 'ARRAY';
@@ -167,42 +219,63 @@ sub record_to_tsv {
 
         my $value;
 
+
+        ### NCPPB number
+
         if ($column eq 'NCPPB_number') {
 
             $value = $record->{name};
-
         }
+
+
+        ### Catalogue name
+
         elsif ($column eq 'catalogue_name') {
 
             $value = $record->{name_2};
-
         }
+
+
+        ### NCBI URL
+
         elsif ($column eq 'url_link_ncbi') {
 
             $value = clean_url($record->{$column});
-
         }
+
+
+        ### Q-bank URL
+
         elsif ($column eq 'url_link_q_bank') {
 
             $value = clean_url($record->{$column});
-
         }
+
+
+        ### Construct NCPPB detail URL
+
         elsif ($column eq 'detail_url') {
 
             my $ncppb = clean_value($record->{name});
 
-            $value = "https://ncppb.fera.co.uk/furtherinfo/$ncppb";
-
+            $value =
+                "https://ncppb.fera.co.uk/furtherinfo/$ncppb";
         }
+
+
+        ### All other fields
+
         else {
 
             $value = clean_value($record->{$column});
         }
 
+
         $value = '' unless defined $value;
 
         push @values, $value;
     }
+
 
     return join("\t", @values);
 }
@@ -257,5 +330,56 @@ for my $record (@sorted_data) {
 close $sorted;
 
 print "Wrote $sorted_output\n";
-print "Sorted ", scalar(@sorted_data), " records by catalogue name\n";
+print "Sorted ",
+      scalar(@sorted_data),
+      " records by catalogue name\n";
+
+
+### Final validation
+
+print "\nChecking TSV structure...\n";
+
+open my $check, '<:encoding(UTF-8)', $output
+    or die "Cannot check $output: $!\n";
+
+my $line_number = 0;
+my $bad_lines   = 0;
+
+while (my $line = <$check>) {
+
+    $line_number++;
+
+    chomp $line;
+
+    my @fields = split(/\t/, $line, -1);
+
+    if (scalar(@fields) != scalar(@columns)) {
+
+        print "WARNING: line $line_number contains ",
+              scalar(@fields),
+              " fields; expected ",
+              scalar(@columns),
+              "\n";
+
+        $bad_lines++;
+    }
+}
+
+close $check;
+
+
+if ($bad_lines == 0) {
+
+    print "TSV validation passed: ";
+    print $line_number;
+    print " lines, ";
+    print scalar(@columns);
+    print " fields per line.\n";
+}
+else {
+
+    print "TSV validation FAILED: ";
+    print $bad_lines;
+    print " problematic lines.\n";
+}
 
