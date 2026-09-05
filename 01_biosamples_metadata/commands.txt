@@ -1,0 +1,71 @@
+### Set up NCBI edirect tools
+conda create -n ncbi-edirect -c conda-forge -c bioconda entrez-direct
+conda activate ncbi-edirect
+export EMAIL="your.email@your-institution.ac.uk"
+
+### Choose taxa
+export taxids="txid2487519[Organism:exp] \ # Phytopseudomonas daroniae
+       OR txid46677[Organism:exp] \      # Pseudomonas agarici
+       OR txid3064349[Organism:exp] \      # Pseudomonas alabamensis
+       OR txid2810613[Organism:exp] \      # Pseudomonas alliivorans
+       OR txid53407[Organism:exp] \      # Pseudomonas asplenii
+       OR txid1190415[Organism:exp] \      # Pseudomonas asturiensis
+       OR txid46257[Organism:exp] \      # Pseudomonas avelllenae
+       OR txid254015[Organism:exp] \      # Pseudomonas blatchfordae
+       OR txid3064348[Organism:exp] \      # Pseudomonas boreofloridensis
+       OR txid930166[Organism:exp] \           # Pseudomonas brassicacearum
+       OR txid86840[Organism:exp] \      # Pseudomonas cannabina
+       OR txid46678[Organism:exp] \      # Pseudomonas caricapapayae
+       OR txid1583341[Organism:exp] \      # Pseudomonas cerasi
+       OR txid36746[Organism:exp] \      # Pseudomonas cichorii
+       OR txid3064347[Organism:exp] \      # Pseudomonas citrullilanati
+       OR txid1456814[Organism:exp] \      # Pseudomonas constantinii
+       OR txid47879[Organism:exp] \      # Pseudomonas corrugata
+       OR txid2487520[Organism:exp] \      # Pseudomonas dryadiae
+       OR txid2006980[Organism:exp] \      # Pseudomonas edaphica
+       OR txid53410[Organism:exp] \      # Pseudomonas ficuserectae
+       OR txid29435[Organism:exp] \      # Pseudomonas flavescens
+       OR txid129847[Organism:exp] \      # Pseudomonas grimontii
+       OR txid298[Organism:exp] \      # Pseudomonas marginalis
+       OR txid301[Organism:exp] \      # Pseudomonas oleovorans
+       OR txid2899822[Organism:exp] \      # Pseudomonas petroselini
+       OR txid380021[Organism:exp] \      # Pseudomonas protegens
+       OR txid191391[Organism:exp] \      # Pseudomonas salomonii
+       OR txid3064350[Organism:exp] \      # Pseudomonas serbiensis
+       OR txid86265[Organism:exp] \      # Pseudomonas thivervalensis
+       OR txid29442[Organism:exp] \      # Pseudomonas tolaasii
+       OR txid200454[Organism:exp] \      # Pseudomonas tremae
+       OR txid33069[Organism:exp] \      # Pseudomonas viridiflava
+       OR txid1451454[Organism:exp]"       # Pseudomonas caspiana
+
+### Get all BioSamples as UIDs
+esearch -db biosample -query "$taxids" |
+    efetch -format uid > biosample_uids.txt
+
+### Count how many UIDs there are
+esearch -db biosample \
+  -query "$taxids" |
+grep '<Count>'
+
+### Retrieve the BioSamples
+esearch -db biosample \
+  -query "$taxids" |
+efetch -db biosample -format xml > biosamples.xml
+
+### Count the retrieved BioSamples
+grep -o 'accession="SAM[A-Z]*[0-9]*"' biosamples.xml | wc -l
+grep -o 'accession="SAMN[0-9]*"' biosamples.xml | wc -l
+grep -o 'accession="SAMEA[0-9]*"' biosamples.xml | wc -l
+grep -o 'accession="SAMD[0-9]*"' biosamples.xml | wc -l
+
+### Create a TSV table of metadata for each BioSample XML => biosamples-from-ncbi.tsv
+perl parse_biosamples.pl
+
+### Get NCBI assemblies for each BioSample => biosample_assemblies.tsv
+perl get_biosample_links.pl
+
+### Generate table of assemblies in PhytoBacExplorer and/or NCBI
+perl generate_census_of_assemblies.pl  > RSSC-assemblies-13-august-2026.tsv
+
+### Which NCPPB strains have not yet been sequenced?
+perl identify_ncppb_strains_not_sequenced.pl > mapping-ncppb-to-biosamples.tsv
