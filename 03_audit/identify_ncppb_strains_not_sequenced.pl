@@ -29,9 +29,9 @@ chomp $header_line;
 my @ncppb_headings = split /\t/, $header_line;
 
 ### List the NCPPB headings
-warn "Headings from NCPPB metadata file:\n";
+#warn "Headings from NCPPB metadata file:\n";
 foreach my $heading (@ncppb_headings) {
-    warn "\t$heading\n";
+    #warn "\t$heading\n";
 }
 
 ### Read the NCPPB metadata
@@ -48,7 +48,7 @@ while (my $readline = <$in_ncppb>) {
         my $datum =  $heading2datum{$heading};
         if (defined $datum and length $datum) {
             $ncppb_metadata{$id}{$heading} = $datum;
-	    warn "'NCPPB_$id' '$heading' => '$datum'\n";
+	    #warn "'NCPPB_$id' '$heading' => '$datum'\n";
         } else {
             $ncppb_metadata{$id}{$heading} = '';
         }
@@ -68,7 +68,7 @@ chomp $header_line;
 my @biosample_metadata_headings = split /\t/, $header_line;
 
 ### List the BioSample metadata headings
-warn "Headings from BioSamples metadata file:\n";
+#warn "Headings from BioSamples metadata file:\n";
 foreach my $heading (@biosample_metadata_headings) {
     #warn "\t$heading\n";
 }
@@ -208,10 +208,31 @@ foreach my $id (sort {$a<=>$b} keys %ncppb_metadata) {
     }
 }
 
+### Print a summary for each NCPPB strain 
+
+### NCPPB ID
+print 'NCPPB ID';
+print "\t";
+print 'BioSample';
+print "\t";
+print 'NCBI strain';
+print "\t";
+print 'NCBI assemblies';
+print "\t";
+print 'PhytoBacExplorer assemblies';
+foreach my $heading (@ncppb_headings) {
+    print "\t";
+    print "$heading";
+}
+print "\t";
+print 'Basis for match';
+print "\n";
 
 ### Print a summary for each NCPPB strain
 foreach my $id (sort {$a<=>$b} keys %ncppb_metadata) {
-    print "$id";
+
+    ### NCPPB ID
+    print "NCPPB $id";
 
     ### BioSample
     print "\t";
